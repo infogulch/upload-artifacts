@@ -1,0 +1,87 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly canary (Mondays 07:00 UTC) to catch silent Artifacts API drift.
+    - cron: "0 7 * * 1"
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node index.js --selftest
+
+  upload:
+    runs-on: ubuntu-latest
+    outputs:
+      bhash: ${{ steps.fixtures.outputs.bhash }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the input zips (one per artifact)
+        id: fixtures
+        run: |
+          mkdir -p dist
+          printf 'hello world\n' > a.txt
+          head -c 2048 /dev/urandom > b.bin
+          echo 'just me' > note.txt
+          # -j junks paths so files sit at the zip root -> they extract directly
+          # inside the downloaded artifact.
+          zip -j -q dist/alpha.zip a.txt b.bin
+          zip -j -q dist/beta.zip note.txt
+          echo "bhash=$(sha256sum b.bin | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Upload each zip as its own artifact
+        uses: ./
+        with:
+          path: dist/*.zip
+          retention-days: 1
+
+  download:
+    needs: upload
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Old (always unzips) and new (content-type aware) download sides must
+      # both read the application/zip blobs this action produces.
+      - name: Download with download-artifact@v4 (old)
+        uses: actions/download-artifact@v4
+        with:
+          path: dl-old
+      - name: Download with download-artifact@v8 (new)
+        uses: actions/download-artifact@v8
+        with:
+          path: dl-new
+      - name: Verify both downloads
+        env:
+          WANT_BHASH: ${{ needs.upload.outputs.bhash }}
+        run: |
+          set -euo pipefail
+          verify() {
+            dir=$1
+            echo "=== verifying $dir ==="
+            find "$dir" -type f | sort
+
+            # Files must land DIRECTLY inside each artifact dir (alpha/, beta/),
+            # i.e. download-artifact unzipped our blob -- no nested zip, no wrapper.
+            [ -f "$dir/alpha/a.txt" ] || { echo "::error::[$dir] alpha/a.txt not directly inside artifact"; exit 1; }
+            [ -f "$dir/alpha/b.bin" ] || { echo "::error::[$dir] alpha/b.bin not directly inside artifact"; exit 1; }
+            [ -f "$dir/beta/note.txt" ] || { echo "::error::[$dir] beta/note.txt not directly inside artifact"; exit 1; }
+
+            # a.txt / note.txt are deterministic: compare bytes.
+            printf 'hello world\n' | cmp -s - "$dir/alpha/a.txt" || { echo "::error::[$dir] a.txt content mismatch"; exit 1; }
+            printf 'just me\n'     | cmp -s - "$dir/beta/note.txt" || { echo "::error::[$dir] note.txt content mismatch"; exit 1; }
+
+            # b.bin is random: compare its sha256 against the hash the upload job emitted.
+            got=$(sha256sum "$dir/alpha/b.bin" | cut -d' ' -f1)
+            [ "$got" = "$WANT_BHASH" ] || { echo "::error::[$dir] b.bin hash mismatch: got $got want $WANT_BHASH"; exit 1; }
+
+            echo "ok: $dir (files extracted directly inside alpha/ and beta/)"
+          }
+          verify dl-old
+          verify dl-new

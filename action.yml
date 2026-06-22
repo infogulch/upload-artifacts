@@ -1,0 +1,30 @@
+name: "Upload Artifacts"
+description: "Upload each pre-zipped file matching a glob as its own separate artifact, in one step."
+author: "infogulch"
+branding:
+  icon: "upload-cloud"
+  color: "blue"
+inputs:
+  path:
+    description: >
+      One or more glob patterns (newline- or comma-separated) matching zip files.
+      Each matched zip becomes its own artifact, named after the file's basename
+      with a trailing ".zip" stripped (e.g. release.zip -> artifact "release").
+      Inputs must already be zips; download-artifact unzips them so the files land
+      directly inside the downloaded artifact.
+    required: true
+  retention-days:
+    description: "Days before the artifacts expire. 0 (default) uses the repository default."
+    default: "0"
+  overwrite:
+    description: "If true, delete an existing artifact with the same name before uploading."
+    default: "false"
+  if-no-files-found:
+    description: "Behavior when no files match: warn (default), error, or ignore."
+    default: "warn"
+outputs:
+  artifacts:
+    description: 'JSON array of uploaded artifacts: [{ "name", "id", "size" }, ...].'
+runs:
+  using: "node24"
+  main: "index.js"
