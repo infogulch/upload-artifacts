@@ -1,4 +1,4 @@
-name: "Upload Artifacts"
+name: "Upload Zip Artifacts"
 description: "Upload each pre-zipped file matching a glob as its own separate artifact, in one step."
 author: "infogulch"
 branding:
