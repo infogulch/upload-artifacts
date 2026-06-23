@@ -1,4 +1,4 @@
-# upload-artifacts
+# upload-zip-artifacts
 
 Upload **pre-zipped files matching a glob pattern as separate artifacts** in a
 single step. Set it up once; add more zips later and they're picked up
@@ -18,7 +18,7 @@ Zip your files yourself (one zip per artifact), then point the action at them:
     zip -j out/linux.zip build/linux/*
     zip -j out/macos.zip build/macos/*
 
-- uses: infogulch/upload-artifacts@v1
+- uses: infogulch/upload-zip-artifacts@v1
   with:
     path: out/*.zip          # each zip -> its own artifact, named by basename minus ".zip"
 ```
